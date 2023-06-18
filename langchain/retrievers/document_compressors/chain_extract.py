@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Callable, Dict, Optional, Sequence
 
-from langchain import LLMChain, PromptTemplate
 from langchain.base_language import BaseLanguageModel
 from langchain.retrievers.document_compressors.base import BaseDocumentCompressor
 from langchain.retrievers.document_compressors.chain_extract_prompt import (

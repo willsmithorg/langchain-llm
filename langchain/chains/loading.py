@@ -17,7 +17,7 @@ from langchain.chains.llm_bash.base import LLMBashChain
 from langchain.chains.llm_checker.base import LLMCheckerChain
 from langchain.chains.llm_math.base import LLMMathChain
 from langchain.chains.llm_requests import LLMRequestsChain
-from langchain.chains.pal.base import PALChain
+from langchain.chains.pal.base import PALChain, PALGenericChain
 from langchain.chains.qa_with_sources.base import QAWithSourcesChain
 from langchain.chains.qa_with_sources.vector_db import VectorDBQAWithSourcesChain
 from langchain.chains.retrieval_qa.base import RetrievalQA, VectorDBQA
@@ -282,6 +282,37 @@ def _load_pal_chain(config: dict, **kwargs: Any) -> PALChain:
         return PALChain(llm=llm, prompt=prompt, **config)
 
 
+def _load_pal_generic_chain(config: dict, **kwargs: Any) -> PALGenericChain:
+    llm = None
+    if "llm" in config:
+        llm_config = config.pop("llm")
+        llm = load_llm_from_config(llm_config)
+    elif "llm_path" in config:
+        llm = load_llm(config.pop("llm_path"))
+    else:
+        raise ValueError("One of `llm` or `llm_path` must be present.")
+    if "prompt" in config:
+        prompt_config = config.pop("prompt")
+        prompt = load_prompt_from_config(prompt_config)
+    elif "prompt_path" in config:
+        prompt = load_prompt(config.pop("prompt_path"))
+    else:
+        raise ValueError("One of `prompt` or `prompt_path` must be present.")
+    if "example_selector" in config:
+        example_selector_config = config.pop("example_selector")
+        example_selector = load_chain_from_config(example_selector_config)
+    else:
+        raise ValueError("`example_selector` must be present.")
+    if "lessons" in config:
+        lessons_config = config.pop("lessons")
+        lessons = load_chain_from_config(lessons_config)
+    else:
+        raise ValueError("`lessons` must be present.")
+
+    return PALGenericChain(llm=llm, prompt=prompt, example_selector=example_selector, lessons=lessons, **config)
+
+
+
 def _load_refine_documents_chain(config: dict, **kwargs: Any) -> RefineDocumentsChain:
     if "initial_llm_chain" in config:
         initial_llm_chain_config = config.pop("initial_llm_chain")
@@ -473,6 +504,7 @@ type_to_loader_dict = {
     "llm_math_chain": _load_llm_math_chain,
     "llm_requests_chain": _load_llm_requests_chain,
     "pal_chain": _load_pal_chain,
+    "pal_generic_chain": _load_pal_generic_chain,
     "qa_with_sources_chain": _load_qa_with_sources_chain,
     "stuff_documents_chain": _load_stuff_documents_chain,
     "map_reduce_documents_chain": _load_map_reduce_documents_chain,

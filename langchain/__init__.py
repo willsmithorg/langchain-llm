@@ -12,6 +12,7 @@ from langchain.chains import (
     LLMCheckerChain,
     LLMMathChain,
     PALChain,
+    PALGenericChain,
     QAWithSourcesChain,
     SQLDatabaseChain,
     VectorDBQA,
@@ -115,6 +116,7 @@ __all__ = [
     "VectorDBQAWithSourcesChain",
     "QAWithSourcesChain",
     "PALChain",
+    "PALGenericChain",
     "LlamaCpp",
     "HuggingFaceTextGenInference",
 ]

@@ -11,7 +11,7 @@ from langchain.callbacks.manager import Callbacks
 from langchain.chains.api import news_docs, open_meteo_docs, podcast_docs, tmdb_docs
 from langchain.chains.api.base import APIChain
 from langchain.chains.llm_math.base import LLMMathChain
-from langchain.chains.pal.base import PALChain
+from langchain.chains.pal.base import PALChain, PALGenericChain
 from langchain.requests import TextRequestsWrapper
 from langchain.tools.arxiv.tool import ArxivQueryRun
 from langchain.tools.pubmed.tool import PubmedQueryRun

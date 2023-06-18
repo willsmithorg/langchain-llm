@@ -15,8 +15,14 @@ from langchain.chains.base import Chain
 from langchain.chains.llm import LLMChain
 from langchain.chains.pal.colored_object_prompt import COLORED_OBJECT_PROMPT
 from langchain.chains.pal.math_prompt import MATH_PROMPT
+from langchain.chains.pal.generic_prompt import GENERIC_PROMPT
 from langchain.prompts.base import BasePromptTemplate
 from langchain.utilities import PythonREPL
+from langchain.prompts.few_shot import FewShotPromptTemplate
+from langchain.prompts.example_selector import SemanticSimilarityExampleSelector
+from langchain.embeddings.base import Embeddings
+from langchain.vectorstores.base import VectorStore
+
 
 
 class PALChain(Chain):
@@ -116,3 +122,94 @@ class PALChain(Chain):
     @property
     def _chain_type(self) -> str:
         return "pal_chain"
+
+
+
+class PALGenericChain(PALChain):
+
+    llm_chain: Optional[LLMChain] = None
+    example_selector: SemanticSimilarityExampleSelector = None
+    lessons: List[Dict[str, str]] = None
+    prompt: BasePromptTemplate = GENERIC_PROMPT
+
+    @classmethod
+    def from_colored_object_prompt(cls, llm: BaseLanguageModel, **kwargs: Any) -> PALGenericChain:
+        raise NotImplementedError('Pal Generic Chain does not implement from_colored_object_prompt, use "from_generic_prompt"')
+
+    @classmethod
+    def from_math_prompt(cls, llm: BaseLanguageModel, **kwargs: Any) -> PALGenericChain:
+        raise NotImplementedError('Pal Generic Chain does not implement from_math_prompt, use "from_generic_prompt"')
+
+
+    @property
+    def input_keys(self) -> List[str]:
+        """Return the singular input key.
+        """
+        return ['question']
+
+    def _call(
+        self,
+        inputs: Dict[str, Any],
+        run_manager: Optional[CallbackManagerForChainRun] = None,
+    ) -> Dict[str, str]:
+        _run_manager = run_manager or CallbackManagerForChainRun.get_noop_manager()
+
+        # TODO extract query and solution from most relevant lessons and insert them into the prompt somehow
+        prompt=FewShotPromptTemplate(
+            example_selector=self.example_selector,
+            example_prompt=GENERIC_PROMPT,
+            suffix="Q: {question}\n\n# solution in Python:\n",
+            input_variables=["question"]
+        )
+        llm_chain = LLMChain(llm=self.llm, prompt=prompt)
+
+        code_to_run = llm_chain.predict(
+            stop=[self.stop], question=inputs['question']
+        )
+        code_to_run += f"\n{self.get_answer_expr}"
+        _run_manager.on_text(code_to_run, color="green", end="\n", verbose=self.verbose)
+        repl = PythonREPL(_globals=self.python_globals, _locals=self.python_locals)
+        res = repl.run(code_to_run)
+        output = {self.output_key: res.strip()}
+        if self.return_intermediate_steps:
+            output["intermediate_steps"] = code_to_run
+        return output
+
+    @root_validator(pre=True)
+    def raise_deprecation(cls, values: Dict) -> Dict:
+        return values
+
+    @classmethod
+    def from_generic_prompt(cls, llm: BaseLanguageModel, embeddings: Embeddings, vectorstore: VectorStore,
+                            lessons: List[Dict[str, str]], **kwargs: Any) -> PALGenericChain:
+        """Load PAL from math prompt."""
+
+        # Embed each lesson and store the embedding on the lesson.
+        # embeds = embeddings.embed_documents([ lesson['query'] for lesson in lessons ])
+        # for lesson, embed in zip(lessons, embeds):
+        #     lesson["embedding"] = embed
+        # relevant_filter = EmbeddingsFilter(embeddings=embeddings, similarity_threshold=0.75)
+
+        example_selector = SemanticSimilarityExampleSelector.from_examples(
+            # This is the list of examples available to select from.
+            lessons,
+            # This is the embedding class used to produce embeddings which are used to measure semantic similarity.
+            embeddings,
+            # This is the VectorStore class that is used to store the embeddings and do a similarity search over.
+            vectorstore,
+            # This is the number of examples to produce.
+            k=5
+        )
+
+        return cls(
+            llm=llm,
+            example_selector=example_selector,
+            lessons=lessons,
+            stop="\n\n",
+            get_answer_expr="print(solution())",
+            **kwargs,
+        )
+
+    @property
+    def _chain_type(self) -> str:
+        return "pal_generic_chain"
