@@ -30,7 +30,7 @@ from langchain import OpenAI
 import os
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--append', action='store_true')
+parser.add_argument('--append', action='store_true', default=True)
 parser.add_argument('--verbose', action='store_true')
 parser.add_argument('--dataset', default='gsm8k', type=str)
 parser.add_argument('--model', default='code-davinci-002', type=str)
