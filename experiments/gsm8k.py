@@ -17,7 +17,7 @@
 import copy
 import json
 import argparse
-import tqdm
+import concurrent.futures
 
 
 from langchain.chains import PALGenericChain, PALChain
@@ -36,7 +36,9 @@ parser.add_argument('--majority_at', default=None, type=int)
 parser.add_argument('--temperature', default=0.0, type=float)
 parser.add_argument('--top_p', default=1.0, type=float)
 parser.add_argument('--max_tokens', default=2048, type=int)
-parser.add_argument('--mode', default='palgeneric', type=str)
+parser.add_argument('--mode', default='pal', type=str)
+parser.add_argument('--workers', default=4, type=int)
+
 args = parser.parse_args()
 
 DATA_PATH = f'{args.dataset}.jsonl'
@@ -63,37 +65,55 @@ else:
 if args.append:
     try:
         lines = open(OUTPUT_PATH).readlines()
-        num_skip_exps = len(lines)
         scores = [x['score'] for x in map(json.loads, lines)]
+        already_completed = [x['input'] for x in map(json.loads, lines)]
     except FileNotFoundError:
-        num_skip_exps = 0
         scores = []
 
 else:
-    num_skip_exps = 0
     scores = []
 
-with open(OUTPUT_PATH, 'a' if args.append else 'w') as f:
-    pbar = tqdm.tqdm(examples[num_skip_exps:], initial=num_skip_exps, total=len(examples))
-    for x in pbar:
-        question = x['input']
-        result = copy.copy(x)
+def process(x):
+    question = x['input']
+    result = copy.copy(x)
 
-        try:
-            ans = chain.run(question=question)
-            ans = float(ans)
-            score = 1 if abs(ans - x['target']) < 1e-3 else 0
-        except Exception as e:
-            print(x, e)
-            ans = ''
-            score = 0
-        scores.append(score)
+    try:
+        ans = chain.run(question=question)
+        ans = float(ans)
+        score = 1 if abs(ans - x['target']) < 1e-3 else 0
+    except Exception as e:
+        print(x, e)
+        ans = ''
+        score = 0
 
-        result['answer'] = ans
-        result['score'] = score
-        f.write(json.dumps(result) + '\n')
 
-        print(f'Accuracy so far - {sum(scores) / len(scores)}')
+    result['answer'] = ans
+    result['score'] = score
+    return result
+
+
+# Zap file if we are not in append mode
+if not args.append:
+    with open(OUTPUT_PATH, 'w') as f:
         f.flush()
+
+with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as executor:
+
+    future_to_work = {executor.submit(process, x): x for x in examples if x['input'] not in already_completed}
+
+    for future in concurrent.futures.as_completed(future_to_work):
+        work = future_to_work[future]
+        try:
+            result = future.result()
+            scores.append(result['score'])
+
+            with open(OUTPUT_PATH, 'a') as f:
+                f.write(json.dumps(result) + '\n')
+                f.flush()
+        except Exception as e:
+            print(f'job {work} created an exception : {e}')
+
+        print(f'Accuracy so far - {sum(scores) / len(scores)} on {len(scores)} of {len(examples)}')
+
 
 print(f'Accuracy - {sum(scores) / len(scores)}')
