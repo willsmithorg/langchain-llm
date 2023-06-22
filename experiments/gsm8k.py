@@ -18,9 +18,7 @@ import copy
 import json
 import argparse
 import tqdm
-import os
 
-import lessons
 
 from langchain.chains import PALGenericChain, PALChain
 from langchain.vectorstores import Chroma
@@ -31,35 +29,46 @@ import os
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--append', action='store_true', default=True)
-parser.add_argument('--verbose', action='store_true')
+parser.add_argument('--verbose', action='store_true', default=True)
 parser.add_argument('--dataset', default='gsm8k', type=str)
-parser.add_argument('--model', default='code-davinci-002', type=str)
+parser.add_argument('--model', default='gpt-3.5-turbo-0613', type=str)
 parser.add_argument('--majority_at', default=None, type=int)
 parser.add_argument('--temperature', default=0.0, type=float)
 parser.add_argument('--top_p', default=1.0, type=float)
-parser.add_argument('--max_tokens', default=256, type=int)
+parser.add_argument('--max_tokens', default=2048, type=int)
+parser.add_argument('--mode', default='palgeneric', type=str)
 args = parser.parse_args()
 
 DATA_PATH = f'{args.dataset}.jsonl'
-OUTPUT_PATH = f'{args.dataset}_results.jsonl'
+OUTPUT_PATH = f'{args.mode}_{args.model}_{args.dataset}_results.jsonl'
 
 examples = list(map(json.loads, open(DATA_PATH)))
 
 
 os.environ['OPENAI_API_KEY'] = 'sk-sHdd3jVAqyCPEiShN8sOT3B' + 'lbkFJMGaOoCiZGt77yUyJ3Ye4'
 
-llm = OpenAI(temperature=args.temperature, max_tokens=args.max_tokens)
-from langchain.embeddings.openai import OpenAIEmbeddings
-embeddings = OpenAIEmbeddings()
-vectorstore=Chroma
-pal_generic_chain = PALGenericChain.from_generic_prompt(llm, embeddings, vectorstore, lessons.lessons, verbose=True)
-
+llm = OpenAI(temperature=args.temperature, max_tokens=args.max_tokens, model_name=args.model)
+if args.mode == 'palgeneric':
+    from langchain.embeddings.openai import OpenAIEmbeddings
+    embeddings = OpenAIEmbeddings()
+    vectorstore=Chroma
+    chain = PALGenericChain.from_generic_prompt(llm, embeddings, vectorstore, lessons.lessons, verbose=True)
+    pass
+elif args.mode == 'pal':
+    chain = PALChain.from_math_prompt(llm, verbose=args.verbose)
+else:
+    raise NotImplementedError(f'unimplemented mode {args.mode}')
 
 
 if args.append:
-    lines = open(OUTPUT_PATH).readlines()
-    num_skip_exps = len(lines)
-    scores = [x['score'] for x in map(json.loads, lines)]
+    try:
+        lines = open(OUTPUT_PATH).readlines()
+        num_skip_exps = len(lines)
+        scores = [x['score'] for x in map(json.loads, lines)]
+    except FileNotFoundError:
+        num_skip_exps = 0
+        scores = []
+
 else:
     num_skip_exps = 0
     scores = []
@@ -71,11 +80,11 @@ with open(OUTPUT_PATH, 'a' if args.append else 'w') as f:
         result = copy.copy(x)
 
         try:
-            ans = pal_generic_chain.run(question=question)
+            ans = chain.run(question=question)
             ans = float(ans)
             score = 1 if abs(ans - x['target']) < 1e-3 else 0
         except Exception as e:
-            print(e)
+            print(x, e)
             ans = ''
             score = 0
         scores.append(score)
